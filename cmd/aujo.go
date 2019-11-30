@@ -3,9 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
-	"math"
 	"math/rand"
 	"net/http"
 	"os"
@@ -14,35 +12,10 @@ import (
 	"github.com/rwelin/aujo/api"
 )
 
-const SamplingInterval = 2.0 * math.Pi / 44100.0
-
 var major = []float64{69, 71, 73, 74, 76, 78, 80}
 var minor = []float64{69, 71, 72, 74, 76, 77, 79}
 var melMinor = []float64{69, 71, 72, 74, 76, 78, 80}
 var harMinor = []float64{69, 71, 72, 74, 75, 77, 80}
-
-func play(m *aujo.Mix) {
-	out := os.Stdout
-
-	w := out.Write
-	w([]byte("RIFF"))                 // ChunkID
-	w([]byte{0, 0, 0, 0})             // ChunkSize
-	w([]byte("WAVE"))                 // Format
-	w([]byte("fmt "))                 // Subchunk1ID
-	w([]byte{0x10, 0, 0, 0})          // Subchunk1Size PCM
-	w([]byte{0x1, 0})                 // AudioFormat PCM
-	w([]byte{0x1, 0})                 // NumChannels Mono
-	w([]byte{0x44, 0xAC, 0x0, 0x0})   // SampleRate 44100Hz
-	w([]byte{0x88, 0x58, 0x1, 0x0})   // ByteRate 44100 * 1 * 16/8
-	w([]byte{0x2, 0x0})               // BlockAlign
-	w([]byte{0x10, 0x0})              // BitsPerSample
-	w([]byte("data"))                 // Subchunk2ID
-	w([]byte{0xFF, 0xFF, 0xFF, 0xFF}) // Subchunk2Size
-
-	for {
-		io.CopyN(out, m, 1024)
-	}
-}
 
 const ConfigFilename = "config.json"
 
@@ -120,8 +93,7 @@ func main() {
 		},
 	})
 
-	go m.Mix()
-	go play(m)
+	go m.Play(os.Stdout)
 
 	handler := api.NewHandler(&apiCallbacks{
 		m: m,

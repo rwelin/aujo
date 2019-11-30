@@ -3,10 +3,13 @@ package aujo
 import (
 	"encoding/binary"
 	"encoding/json"
+	"io"
 	"math"
 	"os"
 	"sync"
 )
+
+const SamplingInterval = 2.0 * math.Pi / 44100.0
 
 type Instrument struct {
 	Harmonics []float64
@@ -38,23 +41,36 @@ type Mix struct {
 	event   int       // event is the index of the next event
 	nextSeq *Sequence // nextSeq is played after the current sequence has finished
 
-	SamplingInterval float64 // sampling interval in radians
-	Level            float64 // master audio level
-	Instruments      []Instrument
-	Voices           []Voice
+	Level       float64 // master audio level
+	Instruments []Instrument
+	Voices      []Voice
+}
+
+var wavHeader = []byte{
+	'R', 'I', 'F', 'F', // ChunkID
+	0, 0, 0, 0, // ChunkSize
+	'W', 'A', 'V', 'E', // Format
+	'f', 'm', 't', ' ', // Subchunk1ID
+	0x10, 0x0, 0x0, 0x0, // Subchunk1Size PCM
+	0x1, 0x0, // AudioFormat PCM
+	0x1, 0x0, // NumChannels Mono
+	0x44, 0xAC, 0x0, 0x0, // SampleRate 44100Hz
+	0x88, 0x58, 0x1, 0x0, // ByteRate 44100 * 1 * 16/8
+	0x2, 0x0, // BlockAlign
+	0x10, 0x0, // BitsPerSample
+	'd', 'a', 't', 'a', // Subchunk2ID
+	0xFF, 0xFF, 0xFF, 0xFF, // Subchunk2Size
+}
+
+func NewMix() *Mix {
+	return &Mix{
+		bufC: make(chan []byte),
+		rem:  wavHeader,
+	}
 }
 
 func ReadMixConfig(filename string) *Mix {
-	m := &Mix{
-		bufC: make(chan []byte),
-		nextSeq: &Sequence{
-			Events: []Event{
-				{
-					Time: 10000000,
-				},
-			},
-		},
-	}
+	m := NewMix()
 
 	f, err := os.Open(filename)
 	if err != nil {
@@ -74,6 +90,14 @@ func (m *Mix) Lock() {
 
 func (m *Mix) Unlock() {
 	m.mutex.Unlock()
+}
+
+func (m *Mix) Play(out io.Writer) {
+	go m.Mix()
+
+	for {
+		io.CopyN(out, m, 1024)
+	}
 }
 
 func (m *Mix) Read(buf []byte) (int, error) {
@@ -118,7 +142,7 @@ func (m *Mix) fill(buf []byte) int {
 			}
 		}
 
-		s := float64(m.index) * m.SamplingInterval
+		s := float64(m.index) * SamplingInterval
 		var sum float64
 		for _, v := range m.Voices {
 			f := pitchToFreq(v.Pitch)
