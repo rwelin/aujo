@@ -79,12 +79,14 @@ func main() {
 					}
 
 					m.Voices[0].Pitch = scale[p]
+					m.Voices[0].PitchTime = 0
 				},
 			},
 			{
 				Time: 12000,
 				Func: func(m *aujo.Mix) {
 					m.Voices[1].Pitch = scale[(p+2)%len(scale)]
+					m.Voices[1].PitchTime = 12000
 				},
 			},
 			{

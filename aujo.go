@@ -11,21 +11,51 @@ import (
 
 const SamplingInterval = 2.0 * math.Pi / 44100.0
 
-type Instrument struct {
-	Harmonics []float64
+type Envelope struct {
+	Value float64
+	Time  int64
 }
 
-func (inst *Instrument) Mix(step float64) float64 {
+type Instrument struct {
+	Harmonics []float64
+	Attack    Envelope
+	Decay     Envelope
+	Sustain   Envelope
+	Release   Envelope
+}
+
+func interpolate(index int64, e0, e1 Envelope) float64 {
+	return (e1.Value-e0.Value)/float64(e1.Time-e0.Time)*float64(index-e0.Time) + e0.Value
+}
+
+func (inst *Instrument) Mix(index int64, step float64) float64 {
+	if index < 0 {
+		return 0
+	}
+
+	var lev float64
+	if index < inst.Attack.Time {
+		lev = interpolate(index, Envelope{}, inst.Attack)
+	} else if index < inst.Decay.Time {
+		lev = interpolate(index, inst.Attack, inst.Decay)
+	} else if index < inst.Sustain.Time {
+		lev = interpolate(index, inst.Decay, inst.Sustain)
+	} else if index < inst.Release.Time {
+		lev = interpolate(index, inst.Sustain, inst.Release)
+	}
+
 	var sum float64
 	for i, v := range inst.Harmonics {
 		sum += v * math.Sin(step*float64(i+1))
 	}
-	return sum
+
+	return lev * sum
 }
 
 type Voice struct {
 	Level      float64
 	Pitch      float64
+	PitchTime  int64
 	Instrument int
 }
 
@@ -146,7 +176,8 @@ func (m *Mix) fill(buf []byte) int {
 		var sum float64
 		for _, v := range m.Voices {
 			f := pitchToFreq(v.Pitch)
-			sum += v.Level * m.Instruments[v.Instrument].Mix(s*f)
+			pitchTime := m.index - v.PitchTime
+			sum += v.Level * m.Instruments[v.Instrument].Mix(pitchTime, s*f)
 		}
 		m.index++
 
@@ -158,7 +189,7 @@ func (m *Mix) fill(buf []byte) int {
 
 func (m *Mix) Mix() {
 	for {
-		buf := make([]byte, 128)
+		buf := make([]byte, 1024)
 		n := m.fill(buf)
 		m.bufC <- buf[:n]
 	}
