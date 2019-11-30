@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
 	"math/rand"
@@ -38,81 +39,12 @@ func play(m *aujo.Mix) {
 	w([]byte("data"))                 // Subchunk2ID
 	w([]byte{0xFF, 0xFF, 0xFF, 0xFF}) // Subchunk2Size
 
-	minorScale := false
-
-	i := 0
-	p := 0
-	buf := make([]byte, 2)
 	for {
-		if i%6000 == 0 {
-			d := rand.Intn(6) - 2
-			scale := major
-			if minorScale {
-				if d < 0 {
-					scale = minor
-				} else {
-					scale = harMinor
-				}
-			}
-			p = p + d
-			if p < 0 {
-				p += len(scale)
-			} else if p >= len(scale) {
-				p -= len(scale)
-			}
-
-			m.Lock()
-			m.Voices[0].Pitch = scale[p]
-			m.Voices[1].Pitch = scale[(p+2)%len(scale)]
-			m.Unlock()
-		}
-
-		if i%441000 == 0 {
-			minorScale = !minorScale
-		}
-
-		i += m.Mix(buf, i)
-
-		out.Write(buf)
+		io.CopyN(out, m, 1024)
 	}
 }
 
 const ConfigFilename = "config.json"
-
-func ReadConfig() *aujo.Mix {
-	var m aujo.Mix
-	f, err := os.Open(ConfigFilename)
-	if err != nil {
-		defaultInstrument := [20]float64{1.0}
-		return &aujo.Mix{
-			Level:            10000,
-			SamplingInterval: SamplingInterval,
-			Instruments: []aujo.Instrument{
-				{
-					Harmonics: defaultInstrument[:],
-				},
-			},
-			Voices: []aujo.Voice{
-				{
-					Level:      0.4,
-					Pitch:      69,
-					Instrument: 0,
-				},
-				{
-					Level:      0.1,
-					Pitch:      69,
-					Instrument: 0,
-				},
-			},
-		}
-	}
-
-	if err := json.NewDecoder(f).Decode(&m); err != nil {
-		panic(err)
-	}
-
-	return &m
-}
 
 type apiCallbacks struct {
 	m *aujo.Mix
@@ -156,8 +88,39 @@ func (cb *apiCallbacks) Mix() ([]byte, error) {
 }
 
 func main() {
-	m := ReadConfig()
+	m := aujo.ReadMixConfig(ConfigFilename)
 
+	p := 0
+	scale := major
+	m.SetNextSequence(&aujo.Sequence{
+		Events: []aujo.Event{
+			{
+				Time: 0,
+				Func: func(m *aujo.Mix) {
+					scale := major
+					p += rand.Intn(6) - 2
+					if p < 0 {
+						p += len(scale)
+					} else if p >= len(scale) {
+						p -= len(scale)
+					}
+
+					m.Voices[0].Pitch = scale[p]
+				},
+			},
+			{
+				Time: 12000,
+				Func: func(m *aujo.Mix) {
+					m.Voices[1].Pitch = scale[(p+2)%len(scale)]
+				},
+			},
+			{
+				Time: 24000,
+			},
+		},
+	})
+
+	go m.Mix()
 	go play(m)
 
 	handler := api.NewHandler(&apiCallbacks{
