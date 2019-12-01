@@ -65,11 +65,14 @@ func main() {
 
 	p := 0
 	scale := major
+
 	m.SetNextSequence(&aujo.Sequence{
 		Events: []aujo.Event{
 			{
-				Time: 0,
-				Func: func(m *aujo.Mix) {
+				Time:  0,
+				Voice: 0,
+				Type:  aujo.EventOn,
+				PitchFunc: func() float64 {
 					scale := major
 					p += rand.Intn(6) - 2
 					if p < 0 {
@@ -77,17 +80,26 @@ func main() {
 					} else if p >= len(scale) {
 						p -= len(scale)
 					}
-
-					m.Voices[0].Pitch = scale[p]
-					m.Voices[0].PitchTime = 0
+					return scale[p]
 				},
 			},
 			{
-				Time: 12000,
-				Func: func(m *aujo.Mix) {
-					m.Voices[1].Pitch = scale[(p+2)%len(scale)]
-					m.Voices[1].PitchTime = 12000
+				Time:  6000,
+				Voice: 0,
+				Type:  aujo.EventOff,
+			},
+			{
+				Time:  12000,
+				Voice: 1,
+				Type:  aujo.EventOn,
+				PitchFunc: func() float64 {
+					return scale[(p+2)%len(scale)]
 				},
+			},
+			{
+				Time:  18000,
+				Voice: 1,
+				Type:  aujo.EventOff,
 			},
 			{
 				Time: 24000,

@@ -24,39 +24,62 @@ type Instrument struct {
 	Release   Envelope
 }
 
-func interpolate(index int64, e0, e1 Envelope) float64 {
-	return (e1.Value-e0.Value)/float64(e1.Time-e0.Time)*float64(index-e0.Time) + e0.Value
+func interpolate(index int64, e1 Envelope, val float64) float64 {
+	lev := (e1.Value-val)/float64(e1.Time)*float64(index) + val
+	if lev < 1e-10 {
+		lev = 0
+	}
+	return lev
 }
 
-func (inst *Instrument) Mix(index int64, step float64) float64 {
+func (inst *Instrument) Level(event EventType, index int64, level float64) float64 {
 	if index < 0 {
 		return 0
 	}
 
-	var lev float64
-	if index < inst.Attack.Time {
-		lev = interpolate(index, Envelope{}, inst.Attack)
-	} else if index < inst.Decay.Time {
-		lev = interpolate(index, inst.Attack, inst.Decay)
-	} else if index < inst.Sustain.Time {
-		lev = interpolate(index, inst.Decay, inst.Sustain)
-	} else if index < inst.Release.Time {
-		lev = interpolate(index, inst.Sustain, inst.Release)
+	switch event {
+	case EventOn:
+		if index < inst.Attack.Time {
+			return interpolate(index, inst.Attack, level)
+		}
+		index -= inst.Attack.Time
+		if index < inst.Decay.Time {
+			return interpolate(index, inst.Decay, inst.Attack.Value)
+		}
+		index -= inst.Decay.Time
+		if index < inst.Sustain.Time {
+			return interpolate(index, inst.Sustain, inst.Decay.Value)
+		}
+		index -= inst.Sustain.Time
+		if index < inst.Release.Time {
+			return interpolate(index, inst.Release, inst.Sustain.Value)
+		}
+	case EventOff:
+		if index < inst.Release.Time {
+			return interpolate(index, inst.Release, level)
+		}
 	}
 
+	return 0
+}
+
+func (inst *Instrument) Mix(step float64) float64 {
 	var sum float64
 	for i, v := range inst.Harmonics {
 		sum += v * math.Sin(step*float64(i+1))
 	}
-
-	return lev * sum
+	return sum
 }
 
 type Voice struct {
 	Level      float64
-	Pitch      float64
-	PitchTime  int64
 	Instrument int
+
+	event      EventType
+	eventTime  int64
+	eventLevel float64
+	pitch      float64
+	prevLevel  float64
 }
 
 type Mix struct {
@@ -162,6 +185,24 @@ func (m *Mix) fill(buf []byte) int {
 			if e.Time > m.index {
 				break
 			}
+
+			switch e.Type {
+			case EventOn:
+				fallthrough
+			case EventOff:
+				pitch := e.Pitch
+				if e.PitchFunc != nil {
+					pitch = e.PitchFunc()
+				}
+				v := &m.Voices[e.Voice]
+				if pitch != 0 {
+					v.pitch = pitch
+				}
+				v.event = e.Type
+				v.eventTime = e.Time
+				v.eventLevel = v.prevLevel
+
+			}
 			if e.Func != nil {
 				e.Func(m)
 			}
@@ -174,10 +215,12 @@ func (m *Mix) fill(buf []byte) int {
 
 		s := float64(m.index) * SamplingInterval
 		var sum float64
-		for _, v := range m.Voices {
-			f := pitchToFreq(v.Pitch)
-			pitchTime := m.index - v.PitchTime
-			sum += v.Level * m.Instruments[v.Instrument].Mix(pitchTime, s*f)
+		for i, v := range m.Voices {
+			f := pitchToFreq(v.pitch)
+			offset := m.index - v.eventTime
+			level := m.Instruments[v.Instrument].Level(v.event, offset, v.eventLevel)
+			m.Voices[i].prevLevel = level
+			sum += level * v.Level * m.Instruments[v.Instrument].Mix(s*f)
 		}
 		m.index++
 
@@ -201,9 +244,21 @@ func (m *Mix) SetNextSequence(s *Sequence) {
 	m.nextSeq = s
 }
 
+type EventType int
+
+const (
+	EventNone EventType = iota
+	EventOn
+	EventOff
+)
+
 type Event struct {
-	Time int64
-	Func func(*Mix)
+	Time      int64
+	Pitch     float64
+	PitchFunc func() float64
+	Type      EventType
+	Voice     int
+	Func      func(*Mix)
 }
 
 type Sequence struct {
