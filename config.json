@@ -112,7 +112,9 @@
     },
     {
       "Level": 0.2,
-      "Instrument": 2
+      "Instrument": 2,
+      "VibratoFreq": 3,
+      "VibratoAmp": 0.0012
     }
   ]
 }

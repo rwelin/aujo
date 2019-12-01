@@ -80,8 +80,10 @@ type Channel struct {
 }
 
 type Voice struct {
-	Level      float64
-	Instrument int
+	Level       float64
+	Instrument  int
+	VibratoFreq float64
+	VibratoAmp  float64
 
 	channels []Channel
 }
@@ -235,6 +237,7 @@ func (m *Mix) fill(buf []byte) int {
 		s := float64(m.index) * SamplingInterval
 		var sum float64
 		for i, v := range m.Voices {
+			vib := v.VibratoAmp * math.Sin(v.VibratoFreq*s)
 			cs := v.channels[:0]
 			for j, c := range v.channels {
 				f := pitchToFreq(c.Pitch)
@@ -243,7 +246,7 @@ func (m *Mix) fill(buf []byte) int {
 				if ok {
 					cs = append(cs, c)
 					v.channels[j].PrevLevel = level
-					sum += level * v.Level * m.Instruments[v.Instrument].Mix(s*f)
+					sum += level * v.Level * m.Instruments[v.Instrument].Mix((s+vib)*f)
 				}
 			}
 			m.Voices[i].channels = cs
