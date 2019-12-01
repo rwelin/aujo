@@ -73,7 +73,6 @@ func main() {
 				Voice: 0,
 				Type:  aujo.EventOn,
 				PitchFunc: func() float64 {
-					scale := major
 					p += rand.Intn(6) - 2
 					if p < 0 {
 						p += len(scale)
@@ -85,11 +84,6 @@ func main() {
 			},
 			{
 				Time:  6000,
-				Voice: 0,
-				Type:  aujo.EventOff,
-			},
-			{
-				Time:  12000,
 				Voice: 1,
 				Type:  aujo.EventOn,
 				PitchFunc: func() float64 {
@@ -97,12 +91,23 @@ func main() {
 				},
 			},
 			{
-				Time:  18000,
-				Voice: 1,
+				Time:  10500,
+				Voice: 0,
 				Type:  aujo.EventOff,
+				PitchFunc: func() float64 {
+					return scale[p]
+				},
 			},
 			{
-				Time: 24000,
+				Time:  10000,
+				Voice: 1,
+				Type:  aujo.EventOff,
+				PitchFunc: func() float64 {
+					return scale[(p+2)%len(scale)]
+				},
+			},
+			{
+				Time: 12000,
 			},
 		},
 	})

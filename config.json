@@ -34,11 +34,11 @@
       },
       "Sustain": {
         "Value": 0.7,
-        "Time": 30000
+        "Time": 20000
       },
       "Release": {
         "Value": 0,
-        "Time": 20000
+        "Time": 10000
       }
     }
   ],

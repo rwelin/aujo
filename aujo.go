@@ -32,35 +32,35 @@ func interpolate(index int64, e1 Envelope, val float64) float64 {
 	return lev
 }
 
-func (inst *Instrument) Level(event EventType, index int64, level float64) float64 {
+func (inst *Instrument) Level(event EventType, index int64, level float64) (float64, bool) {
 	if index < 0 {
-		return 0
+		return 0, false
 	}
 
 	switch event {
 	case EventOn:
 		if index < inst.Attack.Time {
-			return interpolate(index, inst.Attack, level)
+			return interpolate(index, inst.Attack, level), true
 		}
 		index -= inst.Attack.Time
 		if index < inst.Decay.Time {
-			return interpolate(index, inst.Decay, inst.Attack.Value)
+			return interpolate(index, inst.Decay, inst.Attack.Value), true
 		}
 		index -= inst.Decay.Time
 		if index < inst.Sustain.Time {
-			return interpolate(index, inst.Sustain, inst.Decay.Value)
+			return interpolate(index, inst.Sustain, inst.Decay.Value), true
 		}
 		index -= inst.Sustain.Time
 		if index < inst.Release.Time {
-			return interpolate(index, inst.Release, inst.Sustain.Value)
+			return interpolate(index, inst.Release, inst.Sustain.Value), true
 		}
 	case EventOff:
 		if index < inst.Release.Time {
-			return interpolate(index, inst.Release, level)
+			return interpolate(index, inst.Release, level), true
 		}
 	}
 
-	return 0
+	return 0, false
 }
 
 func (inst *Instrument) Mix(step float64) float64 {
@@ -71,21 +71,26 @@ func (inst *Instrument) Mix(step float64) float64 {
 	return sum
 }
 
+type Channel struct {
+	Event      EventType
+	EventTime  int64
+	EventLevel float64
+	Pitch      float64
+	PrevLevel  float64
+}
+
 type Voice struct {
 	Level      float64
 	Instrument int
 
-	event      EventType
-	eventTime  int64
-	eventLevel float64
-	pitch      float64
-	prevLevel  float64
+	channels []Channel
 }
 
 type Mix struct {
 	mutex sync.Mutex
 
-	index int64 // index is the current time
+	index    int64 // index is the current time
+	seqIndex int64 // index in the current sequence
 
 	rem  []byte      // rem are the bytes that are ready to be read
 	bufC chan []byte // bufC is used to send the bytes to be read
@@ -170,7 +175,7 @@ func (m *Mix) fill(buf []byte) int {
 	m.Lock()
 	defer m.Unlock()
 
-	if m.index == 0 {
+	if m.seqIndex == 0 {
 		m.seq = m.nextSeq
 		m.event = 0
 	}
@@ -182,7 +187,7 @@ func (m *Mix) fill(buf []byte) int {
 				break
 			}
 			e := m.seq.Events[m.event]
-			if e.Time > m.index {
+			if e.Time > m.seqIndex {
 				break
 			}
 
@@ -196,12 +201,26 @@ func (m *Mix) fill(buf []byte) int {
 				}
 				v := &m.Voices[e.Voice]
 				if pitch != 0 {
-					v.pitch = pitch
+					var channel *Channel
+					for i := range v.channels {
+						if math.Abs(v.channels[i].Pitch-pitch) < 1e-2 {
+							channel = &v.channels[i]
+							break
+						}
+					}
+					eventTime := m.index
+					if channel == nil {
+						v.channels = append(v.channels, Channel{
+							Pitch:     pitch,
+							Event:     e.Type,
+							EventTime: eventTime,
+						})
+					} else {
+						channel.Event = e.Type
+						channel.EventTime = eventTime
+						channel.EventLevel = channel.PrevLevel
+					}
 				}
-				v.event = e.Type
-				v.eventTime = e.Time
-				v.eventLevel = v.prevLevel
-
 			}
 			if e.Func != nil {
 				e.Func(m)
@@ -209,20 +228,28 @@ func (m *Mix) fill(buf []byte) int {
 			m.event++
 			if m.event >= len(m.seq.Events) {
 				m.event = 0
-				m.index = 0
+				m.seqIndex = 0
 			}
 		}
 
 		s := float64(m.index) * SamplingInterval
 		var sum float64
 		for i, v := range m.Voices {
-			f := pitchToFreq(v.pitch)
-			offset := m.index - v.eventTime
-			level := m.Instruments[v.Instrument].Level(v.event, offset, v.eventLevel)
-			m.Voices[i].prevLevel = level
-			sum += level * v.Level * m.Instruments[v.Instrument].Mix(s*f)
+			cs := v.channels[:0]
+			for j, c := range v.channels {
+				f := pitchToFreq(c.Pitch)
+				offset := m.index - c.EventTime
+				level, ok := m.Instruments[v.Instrument].Level(c.Event, offset, c.EventLevel)
+				if ok {
+					cs = append(cs, c)
+					v.channels[j].PrevLevel = level
+					sum += level * v.Level * m.Instruments[v.Instrument].Mix(s*f)
+				}
+			}
+			m.Voices[i].channels = cs
 		}
 		m.index++
+		m.seqIndex++
 
 		t := uint16(m.Level * sum)
 		binary.LittleEndian.PutUint16(buf[i:i+2], t)
