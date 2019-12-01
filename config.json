@@ -26,7 +26,7 @@
       ],
       "Attack": {
         "Value": 1,
-        "Time": 1000
+        "Time": 500
       },
       "Decay": {
         "Value": 0.9,
@@ -40,18 +40,40 @@
         "Value": 0,
         "Time": 10000
       }
+    }, {
+      "Harmonics": [
+        1
+      ],
+      "Attack": {
+        "Value": 1,
+        "Time": 50
+      },
+      "Decay": {
+        "Value": 0,
+        "Time": 3000
+      },
+      "Sustain": {
+        "Value": 0,
+        "Time": 0
+      },
+      "Release": {
+        "Value": 0,
+        "Time": 0
+      }
     }
   ],
   "Voices": [
     {
-      "Level": 0.4,
-      "Pitch": 71,
+      "Level": 0.2,
       "Instrument": 0
     },
     {
       "Level": 0.1,
-      "Pitch": 74,
       "Instrument": 0
+    },
+    {
+      "Level": 0.4,
+      "Instrument": 1
     }
   ]
 }

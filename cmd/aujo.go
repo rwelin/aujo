@@ -70,6 +70,12 @@ func main() {
 		Events: []aujo.Event{
 			{
 				Time:  0,
+				Voice: 2,
+				Type:  aujo.EventOn,
+				Pitch: 35,
+			},
+			{
+				Time:  0,
 				Voice: 0,
 				Type:  aujo.EventOn,
 				PitchFunc: func() float64 {
@@ -83,7 +89,7 @@ func main() {
 				},
 			},
 			{
-				Time:  6000,
+				Time:  12000,
 				Voice: 1,
 				Type:  aujo.EventOn,
 				PitchFunc: func() float64 {
@@ -91,7 +97,7 @@ func main() {
 				},
 			},
 			{
-				Time:  10500,
+				Time:  20500,
 				Voice: 0,
 				Type:  aujo.EventOff,
 				PitchFunc: func() float64 {
@@ -99,7 +105,7 @@ func main() {
 				},
 			},
 			{
-				Time:  10000,
+				Time:  20000,
 				Voice: 1,
 				Type:  aujo.EventOff,
 				PitchFunc: func() float64 {
@@ -107,7 +113,7 @@ func main() {
 				},
 			},
 			{
-				Time: 12000,
+				Time: 24000,
 			},
 		},
 	})
