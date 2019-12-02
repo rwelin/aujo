@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"sync"
+
+	"github.com/rwelin/aujo/dsp"
 )
 
 const SamplingInterval = 2.0 * math.Pi / 44100.0
@@ -173,7 +175,7 @@ func pitchToFreq(pitch float64) float64 {
 	return 440.0 * math.Exp2((pitch-69)/12)
 }
 
-func (m *Mix) fill(buf []byte) int {
+func (m *Mix) fill(buf []float64) {
 	m.Lock()
 	defer m.Unlock()
 
@@ -182,8 +184,7 @@ func (m *Mix) fill(buf []byte) int {
 		m.event = 0
 	}
 
-	i := 0
-	for ; i < len(buf); i += 2 {
+	for i := range buf {
 		for {
 			if len(m.seq.Events) == 0 {
 				break
@@ -254,23 +255,59 @@ func (m *Mix) fill(buf []byte) int {
 		m.index++
 		m.seqIndex++
 
-		t := uint16(m.Level * sum)
-		binary.LittleEndian.PutUint16(buf[i:i+2], t)
+		buf[i] = sum
 	}
-	return i
 }
 
 func (m *Mix) Mix() {
+	const N = 16384
+	hann := dsp.Hann(N)
+	lowpass := dsp.Sinc(N, 600, 4000)
+	buf0 := make([]float64, N)
+	buf1 := make([]float64, N)
+	w1 := make([]float64, N)
+	w := make([]float64, N)
+	out0 := make([]float64, N)
+	out1 := make([]float64, N)
+	out := make([]float64, N)
 	for {
-		buf := make([]byte, 1024)
-		n := m.fill(buf)
-		m.bufC <- buf[:n]
+		m.fill(buf1)
+
+		for i := range w1 {
+			w1[i] = hann[i] * buf1[i]
+		}
+
+		dsp.Convolve(out1, w1, lowpass)
+
+		for i := 0; i < N/2; i++ {
+			w[i] = hann[i] * buf0[i+N/2]
+		}
+		for i := N / 2; i < N; i++ {
+			w[i] = hann[i] * buf1[i-N/2]
+		}
+
+		dsp.Convolve(out, w, lowpass)
+
+		for i := 0; i < N/2; i++ {
+			out[i] += out0[i+N/2]
+		}
+		for i := N / 2; i < N; i++ {
+			out[i] += out1[i-N/2]
+		}
+
+		buf0, buf1 = buf1, buf0
+		out0, out1 = out1, out0
+
+		bytes := make([]byte, len(out)*2)
+		for i := range out {
+			t := uint16(N / 1024 * m.Level * out[i])
+			binary.LittleEndian.PutUint16(bytes[2*i:2*i+2], t)
+		}
+		m.bufC <- bytes
 	}
 }
 
 func (m *Mix) SetNextSequence(s *Sequence) {
-	m.Lock()
-	defer m.Unlock()
 	m.nextSeq = s
 }
 
