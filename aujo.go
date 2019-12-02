@@ -11,7 +11,8 @@ import (
 	"github.com/rwelin/aujo/dsp"
 )
 
-const SamplingInterval = 2.0 * math.Pi / 44100.0
+const SamplingFrequency = float64(44100.0)
+const SamplingInterval = 2.0 * math.Pi / SamplingFrequency
 
 type Envelope struct {
 	Value float64
@@ -65,10 +66,14 @@ func (inst *Instrument) Level(event EventType, index int64, level float64) (floa
 	return 0, false
 }
 
-func (inst *Instrument) Mix(step float64) float64 {
+func (inst *Instrument) Mix(f float64, step float64) float64 {
 	var sum float64
 	for i, v := range inst.Harmonics {
-		sum += v * math.Sin(step*float64(i+1))
+		h := f * float64(i+1)
+		if h > SamplingFrequency/2 {
+			break
+		}
+		sum += v * math.Sin(step*h)
 	}
 	return sum
 }
@@ -247,7 +252,7 @@ func (m *Mix) fill(buf []float64) {
 				if ok {
 					cs = append(cs, c)
 					v.channels[j].PrevLevel = level
-					sum += level * v.Level * m.Instruments[v.Instrument].Mix((s+vib)*f)
+					sum += level * v.Level * m.Instruments[v.Instrument].Mix(f, s+vib)
 				}
 			}
 			m.Voices[i].channels = cs
