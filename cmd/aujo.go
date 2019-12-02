@@ -63,7 +63,7 @@ func (cb *apiCallbacks) Mix() ([]byte, error) {
 func main() {
 	m := aujo.ReadMixConfig(ConfigFilename)
 
-	m.SetNextSequence(examples.AutoChords())
+	m.SetNextSequence(examples.Chords(major))
 
 	go m.Play(os.Stdout)
 

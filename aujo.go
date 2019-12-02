@@ -66,14 +66,26 @@ func (inst *Instrument) Level(event EventType, index int64, level float64) (floa
 	return 0, false
 }
 
-func (inst *Instrument) Mix(f float64, step float64) float64 {
+func (inst *Instrument) Mix(pitch float64, step float64, offset int64) float64 {
 	var sum float64
 	for i, v := range inst.Harmonics {
+		f := pitchToFreq(pitch)
 		h := f * float64(i+1)
 		if h > SamplingFrequency/2 {
 			break
 		}
-		sum += v * math.Sin(step*h)
+
+		p := pitch - 20
+		p *= 0.15 * p
+		atten := 3000000 / (p * float64(offset/2+2000))
+		if atten > 1 {
+			atten = 1
+		}
+		if atten < 1e-5 {
+			break
+		}
+
+		sum += v * math.Sin(step*h) * atten
 	}
 	return sum
 }
@@ -246,13 +258,12 @@ func (m *Mix) fill(buf []float64) {
 			vib := v.VibratoAmp * math.Sin(v.VibratoFreq*s)
 			cs := v.channels[:0]
 			for j, c := range v.channels {
-				f := pitchToFreq(c.Pitch)
 				offset := m.index - c.EventTime
 				level, ok := m.Instruments[v.Instrument].Level(c.Event, offset, c.EventLevel)
 				if ok {
 					cs = append(cs, c)
 					v.channels[j].PrevLevel = level
-					sum += level * v.Level * m.Instruments[v.Instrument].Mix(f, s+vib)
+					sum += level * v.Level * m.Instruments[v.Instrument].Mix(c.Pitch, s+vib, offset)
 				}
 			}
 			m.Voices[i].channels = cs
