@@ -1,33 +1,207 @@
 package examples
 
-import "github.com/rwelin/aujo"
+import (
+	"math"
+	"math/rand"
+	"sort"
 
-func AutoChords() *aujo.Sequence {
-	s := &aujo.Sequence{
-		Events: []aujo.Event{
-			{
-				Time:  0,
-				Voice: 4,
-				Type:  aujo.EventOn,
-				Pitch: 57,
-			},
-			{
-				Time:  0,
-				Voice: 4,
-				Type:  aujo.EventOn,
-				Pitch: 61.0782,
-			},
-			{
-				Time:  0,
-				Voice: 3,
-				Type:  aujo.EventOn,
-				Pitch: 64.0196,
-			},
-			{
-				Time: 96000,
-			},
-		},
+	"github.com/rwelin/aujo"
+)
+
+var tonicChords = [][]float64{
+	{0, 4, 7, 11}, // I7
+	{2, 4, 7, 11}, // iii7
+	{-3, 0, 4, 7}, // vi7
+	{0, 4, 7, 9},  // I6
+}
+
+var subDominantChords = [][]float64{
+	{0, 2, 5, 9}, // ii7
+	{0, 4, 5, 9}, // IV7
+}
+
+var dominantChords = [][]float64{
+	{2, 5, 7, 11}, // V7
+	{-1, 2, 5, 9}, // vii-7
+	{0, 2, 5, 8},  // ii7b5
+	{2, 3, 7, 11}, // bIII+7
+	{2, 5, 7, 12}, // V7sus4
+}
+
+var otherChords = [][]float64{
+	{2, 4, 7, 11}, // iii7
+	{-3, 0, 4, 7}, // vi7
+}
+
+const (
+	funcTonic = iota
+	funcSubDom
+	funcDom
+	funcOther
+
+	funcMax
+)
+
+var functionMap = map[int][][]float64{
+	funcTonic:  tonicChords,
+	funcSubDom: subDominantChords,
+	funcDom:    dominantChords,
+	funcOther:  otherChords,
+}
+
+func middleFunctions(prevFunction int, nextFunction int) []int {
+	pot := make(map[int]struct{})
+	fromPrev := followingFunctions(prevFunction)
+	for _, f := range fromPrev {
+		p := followingFunctions(f)
+		for _, g := range p {
+			if g == nextFunction {
+				pot[f] = struct{}{}
+				break
+			}
+		}
 	}
 
-	return s
+	var funcs []int
+	for f := range pot {
+		funcs = append(funcs, f)
+	}
+	return funcs
+}
+
+func followingFunctions(currentFunction int) []int {
+	var funcs []int
+	switch currentFunction {
+	case funcTonic:
+		funcs = []int{funcSubDom, funcDom, funcOther}
+	case funcSubDom:
+		funcs = []int{funcTonic, funcDom, funcOther}
+	case funcDom:
+		funcs = []int{funcTonic}
+	case funcOther:
+		funcs = []int{funcTonic, funcSubDom, funcDom}
+	default:
+		panic("no")
+	}
+	return funcs
+}
+
+func nextFunction(currentFunction int) int {
+	funcs := followingFunctions(currentFunction)
+	return funcs[rand.Intn(len(funcs))]
+}
+
+func chord(prevFunction int, prevChord []float64, exclude [][]float64) (int, []float64) {
+
+	for attempts := 0; ; attempts++ {
+		function := nextFunction(prevFunction)
+		chords := functionMap[function]
+		c := chords[rand.Intn(len(chords))]
+		minDistChord := findMinDistChord(prevChord, c)
+
+		inExclude := false
+		for _, e := range exclude {
+			eq := true
+			for i := range c {
+				if e[i] != c[i] {
+					eq = false
+					break
+				}
+			}
+			if eq {
+				inExclude = true
+				break
+			}
+		}
+		if !inExclude || attempts < 100 {
+			return function, minDistChord
+		}
+	}
+}
+
+func events(chord []float64, offset int64) []aujo.Event {
+	var events []aujo.Event
+	for i, f := range chord {
+		e := aujo.Event{
+			Time:  offset + 2000*int64(i),
+			Voice: 3,
+			Type:  aujo.EventOn,
+			Pitch: 57 + f,
+		}
+		if i == 0 {
+			e.Pitch -= 12
+		} else if i == 1 {
+			e1 := e
+			e1.Pitch += 12
+			events = append(events, e1)
+		}
+		events = append(events, e)
+	}
+	return events
+}
+
+func findMinDistChord(prevChord []float64, nextChord []float64) []float64 {
+	var exp []float64
+	for _, f := range nextChord {
+		exp = append(exp, f, f-12, f+12)
+	}
+	sort.Float64s(exp)
+
+	minDist := float64(0)
+	var minDistChord []float64
+	for i := 0; i <= len(exp)-len(nextChord); i++ {
+		c1 := exp[i : i+len(nextChord)]
+		var dist float64
+		for j := 0; j < len(c1); j++ {
+			dist += math.Abs(prevChord[j] - c1[j])
+		}
+		if minDistChord == nil || dist < minDist {
+			minDist = dist
+			minDistChord = c1
+		}
+	}
+
+	return minDistChord
+}
+
+const chordDuration = 96000
+
+func progression(reps int, length int, prevFunction int, prevChord []float64) (es []aujo.Event, lastFunction int, lastChord []float64) {
+
+	var cc [][]float64
+
+	for i := 0; i < length; i++ {
+
+		function, minDistChord := chord(prevFunction, prevChord, cc)
+		cc = append(cc, minDistChord)
+		prevFunction = function
+		prevChord = minDistChord
+	}
+
+	for i := 0; i < reps; i++ {
+		for j := 0; j < len(cc); j++ {
+			c := cc[j]
+			es = append(es, events(c, int64((i*len(cc)+j)*chordDuration))...)
+		}
+	}
+
+	return es, prevFunction, prevChord
+}
+
+func seq(prevFunction int, prevChord []float64) *aujo.Sequence {
+
+	e, prevFunction, prevChord := progression(2, 4, prevFunction, prevChord)
+
+	return &aujo.Sequence{
+		Events: append(e, aujo.Event{
+			Time: e[len(e)-1].Time + chordDuration,
+			Func: func(m *aujo.Mix) {
+				m.SetNextSequence(seq(prevFunction, prevChord))
+			},
+		}),
+	}
+}
+
+func AutoChords() *aujo.Sequence {
+	return seq(funcTonic, tonicChords[0])
 }
