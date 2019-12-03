@@ -19,12 +19,23 @@ type Envelope struct {
 	Time  int64
 }
 
+type Attenuation struct {
+	PitchOffset float64
+	P1          float64
+	P2          float64
+	P3          float64
+	P4          float64
+}
+
 type Instrument struct {
 	Harmonics []float64
-	Attack    Envelope
-	Decay     Envelope
-	Sustain   Envelope
-	Release   Envelope
+
+	Attack  Envelope
+	Decay   Envelope
+	Sustain Envelope
+	Release Envelope
+
+	Attenuation Attenuation
 }
 
 func interpolate(index int64, e1 Envelope, val float64) float64 {
@@ -75,14 +86,17 @@ func (inst *Instrument) Mix(pitch float64, step float64, offset int64) float64 {
 			break
 		}
 
-		p := pitch - 20
-		p *= 0.15 * p
-		atten := 3000000 / (p * float64(offset/2+2000))
-		if atten > 1 {
-			atten = 1
-		}
-		if atten < 1e-5 {
-			break
+		atten := float64(1.0)
+		if inst.Attenuation.P1 > 0 {
+			p := pitch - inst.Attenuation.PitchOffset
+			p *= inst.Attenuation.P1 * p
+			atten = inst.Attenuation.P2 / (p*(float64(offset)/(inst.Attenuation.P3+1)+inst.Attenuation.P4) + 1)
+			if atten > 1 {
+				atten = 1
+			}
+			if atten < 1e-5 {
+				break
+			}
 		}
 
 		sum += v * math.Sin(step*h) * atten
@@ -197,8 +211,9 @@ func (m *Mix) fill(buf []float64) {
 	defer m.Unlock()
 
 	if m.seqIndex == 0 {
-		m.seq = m.nextSeq
 		m.event = 0
+		m.seqIndex = 0
+		m.seq = m.nextSeq
 	}
 
 	for i := range buf {
@@ -249,6 +264,9 @@ func (m *Mix) fill(buf []float64) {
 			if m.event >= len(m.seq.Events) {
 				m.event = 0
 				m.seqIndex = 0
+				if m.nextSeq != nil {
+					m.seq = m.nextSeq
+				}
 			}
 		}
 
