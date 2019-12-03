@@ -1,8 +1,10 @@
 package examples
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
+	"os"
 	"sort"
 
 	"github.com/rwelin/aujo"
@@ -103,7 +105,7 @@ func chord(prevFunction int, prevChord []float64, exclude [][]float64) (int, []f
 		for _, e := range exclude {
 			eq := true
 			for i := range c {
-				if e[i] != c[i] {
+				if e[i] != minDistChord[i] {
 					eq = false
 					break
 				}
@@ -113,7 +115,7 @@ func chord(prevFunction int, prevChord []float64, exclude [][]float64) (int, []f
 				break
 			}
 		}
-		if !inExclude || attempts < 100 {
+		if !inExclude || attempts > 100 {
 			return function, minDistChord
 		}
 	}
@@ -153,7 +155,19 @@ func findMinDistChord(prevChord []float64, nextChord []float64) []float64 {
 		c1 := exp[i : i+len(nextChord)]
 		var dist float64
 		for j := 0; j < len(c1); j++ {
-			dist += math.Abs(prevChord[j] - c1[j])
+			d := math.Abs(prevChord[j] - c1[j])
+			switch j {
+			case 0:
+				// Make the base more likely to move
+				if d < 2 {
+					d += 2
+				}
+			case 1:
+				if d < 1 {
+					d += 2
+				}
+			}
+			dist += d
 		}
 		if minDistChord == nil || dist < minDist {
 			minDist = dist
@@ -181,9 +195,11 @@ func progression(reps int, length int, prevFunction int, prevChord []float64) (e
 	for i := 0; i < reps; i++ {
 		for j := 0; j < len(cc); j++ {
 			c := cc[j]
+			fmt.Fprintln(os.Stderr, c)
 			es = append(es, events(c, int64((i*len(cc)+j)*chordDuration))...)
 		}
 	}
+	fmt.Fprintln(os.Stderr)
 
 	return es, prevFunction, prevChord
 }
